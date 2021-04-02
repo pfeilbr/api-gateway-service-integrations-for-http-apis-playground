@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  API Gateway HTTP APIs integration to EventBridge to CloudWatch Logs
+
+Resources:
+  MyHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefinitionBody:
+        "Fn::Transform":
+          Name: "AWS::Include"
+          Parameters:
+            Location: "./api.yaml"
+
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub "${AWS::StackName}"
+
+  EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Send events to CloudWatch Log Group."
+      EventBusName: !GetAtt EventBus.Name
+      EventPattern:
+        account:
+          - !Sub "${AWS::AccountId}"
+        source:
+          - "demo"
+      Targets:
+        - Arn: !GetAtt EventBusLogGroup.Arn
+          Id: "EventBusLogGroup"
+
+  # EventBusPolicy:
+  #   Type: AWS::Events::EventBusPolicy
+  #   Properties:
+  #     StatementId: "MyStatement"
+  #     Statement:
+  #       Effect: "Allow"
+  #       Principal:
+  #         AWS: !GetAtt HttpApiRole.Arn
+  #       Action: "events:PutEvents"
+  #       Resource: !GetAtt EventBus.Arn
+
+  EventBusLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        !Join ["/", ["apigateway-http-api-service-integration", EventBus]]
+
+  HttpApiRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AllowEventBridgePutEvents
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: "events:PutEvents"
+                Resource: !GetAtt EventBus.Arn
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway endpoint"
+    Value: !Sub "https://${MyHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  EventBusLogGroup:
+    Description: "EventBus Log Group"
+    Value: !Sub "${EventBusLogGroup}"
+# stashing
+# LogGroupRole:
+#   Type: "AWS::IAM::Role"
+#   Properties:
+#     AssumeRolePolicyDocument:
+#       Version: 2012-10-17
+#       Statement:
+#         - Effect: Allow
+#           Principal:
+#             Service:
+#               - events.amazonaws.com
+#           Action:
+#             - "sts:AssumeRole"
+#     Policies:
+#       - PolicyName: AllowPutLogEvents
+#         PolicyDocument:
+#           Version: 2012-10-17
+#           Statement:
+#             - Effect: Allow
+#               Action: "logs:CreateLogStream"
+#               Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventBusLogGroup}:*"
+#             - Effect: Allow
+#               Action: "logs:PutLogEvents"
+#               Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${EventBusLogGroup}:*"
+#   DependsOn:
+#     - EventBusLogGroup
